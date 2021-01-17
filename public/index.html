@@ -44,5 +44,27 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
   <script src="index.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js").then(reg => {
+            console.log("We found your service worker file!", reg);
+        }).catch(err => console.log(err));
+      });
+    }
+
+    (function syncTrans() {
+      const db = indexedDB.open("offTransactions");
+      db.onsuccess = e => {
+        if (e.target.result.transaction.objectStore("offTransactions")) {
+          return navigator.serviceWorker.ready.register("onlineSync")
+          .then(() => console.log('Sync registered!'))
+          .catch(() => console.log('Sync registration failed :('));      
+        } else {
+          return;
+        }
+      };
+    })();
+  </script>
 </body>
 </html>

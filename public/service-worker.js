@@ -1,81 +1,118 @@
 const FILES_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/manifest.webmanifest',
-    '/style.css',
-    '/index.js',
-    '/assets/images/icons/icon-192x192.png',
-    '/assets/images/icons/icon-512x512.png',
-    'https://cdn.jsdelivr.net/npm/chart.js@2.8.0',
-    'https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css'
-  ];
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/style.css',
+  '/index.js',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+  'https://cdn.jsdelivr.net/npm/chart.js@2.8.0',
+  'https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css'
+];
   
-  const STATIC_CACHE = "static-cache-v1";
-  const RUNTIME_CACHE = "runtime-cache";
+const CACHE_V1 = "cache-v1";
 
-  self.addEventListener("install", event => {
-    event.waitUntil(
-      caches
-        .open(STATIC_CACHE)
-        .then(cache => cache.addAll(FILES_TO_CACHE))
-        .then(() => self.skipWaiting())
-    );
-  });
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE_V1).then(cache => cache.addAll(FILES_TO_CACHE)));
+  self.skipWaiting();
+});
   
-  // The activate handler takes care of cleaning up old caches.
-  self.addEventListener("activate", event => {
-    const currentCaches = [STATIC_CACHE, RUNTIME_CACHE];
-    event.waitUntil(
-      caches
-        .keys()
-        .then(keyList => {
-          // return array of cache names that are old to delete
-          return Promise.all(
-            keyList.map(key => {
-              if(key !== STATIC_CACHE && key !== RUNTIME_CACHE) {
-                console.log("Removing old cache data", key);
-                return caches.delete(key);
-              }  
-            })
-          )
-        })
-    );
-    self.clients.claim();
-  });
+self.addEventListener("activate", event => {
+  const currentCaches = [CACHE_V1];
+  event.waitUntil(
+    caches.keys().then(keyList => {
+      return Promise.all(keyList.map(key => {
+        if (key !== CACHE_V1) {
+          console.log("Removing old cache data", key);
+          return caches.delete(key);
+        }  
+      }));
+    })
+  );
+  self.clients.claim();
+});
   
-  self.addEventListener("fetch", event => {  
-    // handle runtime requests for data from /api routes
-    if (event.request.url.includes("/api/transaction")) {
-      // make network request and fallback to cache if network request fails (offline)
-      event.respondWith(
-        caches.open(RUNTIME_CACHE).then(cache => {
-          return fetch(event.request)
-            .then(response => {
-              cache.put(event.request, response.clone());
-              return response;
-            })
-            .catch(() => caches.match(event.request));
-        })
-      );
-      return;
-    }
-  
-    // use cache first for all other requests for performance
+self.addEventListener("fetch", event => {
+  const req = event.request;  
+  // handle runtime requests for data from /api routes
+  if (req.url.includes("/api/transaction")) {
+    // make network request and fallback to cache if network request fails (offline)
     event.respondWith(
-      caches.match(event.request).then(cachedResponse => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-  
-        // request is not in cache. make network request and cache the response
-        return caches.open(RUNTIME_CACHE).then(cache => {
-          return fetch(event.request).then(response => {
-            return cache.put(event.request, response.clone()).then(() => {
-              return response;
-            });
-          });
+      caches.open(CACHE_V1).then(cache => {
+        return fetch(req).then(res => {
+          cache.put(req, res.clone());
+          return res;
+        }).catch(() => {
+          if (req.method === "GET") {
+            caches.match(event.request);
+          } else {
+            //open IndexedDB and save the transaction
+            saveRecord(req.body);
+          }
+          return;
         });
       })
-    );
-  });
+    )
+  }
   
+  // use cache first for all other requests for performance
+  event.respondWith(
+    caches.match(req).then(cachedResponse => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+  
+      // request is not in cache. make network request and cache the response
+      return caches.open(CACHE_V1).then(cache => {
+        return fetch(req).then(res => {
+          return cache.put(req, res.clone()).then(() => {
+            return res;
+          });
+        });
+      });
+    })
+  );
+});
+
+self.addEventListener("sync", event => {
+  if (event.tag == "syncAgain") {
+    event.waitUntil(
+      getTransactions().then(transactions => {
+        return fetch("/api/transaction/bulk", {
+          method: 'POST',
+          body: JSON.stringify(transactions),
+          headers: { 'Content-Type': 'application/json' }
+        }).then(() => {
+          console.log("Database updated!");
+        }).catch(err => console.log(err));
+      })  
+    );
+  }
+});
+
+const saveRecord = record => {
+  const openReq = indexedDB.open("offTransactions");
+  openReq.onsuccess = e => {
+    const db = e.target.result;
+    const trans = db.transaction("offTransactions", "readwrite");
+    const offTrans = trans.objectStore("offTransactions");
+    if (!offTrans) {
+      const objectStore = db.createObjectStore("offTransactions", {keyPath: "name"});
+      objectStore.createIndex("name", "name", {unique: false});
+      objectStore.createIndex("amount", "amount", {unique: false});
+      objectStore.createIndex("date", "date", {unique: false});
+    }
+    const trans = {
+      name: record.name,
+      amount: record.value,
+      date: record.date
+    };
+    const storeReq = offTrans.add(trans);
+    storeReq.onsuccess = evt => {
+      const transAdded = evt.target.result;
+      console.log("Offline transaction added!", transAdded);
+    };              
+  };
+}
+
+module.exports = {saveRecord};
