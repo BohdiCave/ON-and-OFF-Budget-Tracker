@@ -18,7 +18,6 @@ self.addEventListener("install", event => {
 });
   
 self.addEventListener("activate", event => {
-  const currentCaches = [CACHE_V1];
   event.waitUntil(
     caches.keys().then(keyList => {
       return Promise.all(keyList.map(key => {
@@ -58,18 +57,14 @@ self.addEventListener("fetch", event => {
   // use cache first for all other requests for performance
   event.respondWith(
     caches.match(req).then(cachedResponse => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-  
+      if (cachedResponse) { return cachedResponse; }
       // request is not in cache. make network request and cache the response
-      return caches.open(CACHE_V1).then(cache => {
-        return fetch(req).then(res => {
-          return cache.put(req, res.clone()).then(() => {
-            return res;
-          });
-        });
-      });
+      return caches.open(CACHE_V1).then(cache => fetch(req)
+      .then(
+        res => cache.put( req, res.clone())
+      ).then(
+        () => res 
+      ));
     })
   );
 });
@@ -82,9 +77,9 @@ self.addEventListener("sync", event => {
           method: 'POST',
           body: JSON.stringify(transactions),
           headers: { 'Content-Type': 'application/json' }
-        }).then(() => {
-          console.log("Database updated!");
-        }).catch(err => console.log(err));
+        })
+        .then(() => console.log("Database updated!"))
+        .catch(err => console.log(err));
       })  
     );
   }
@@ -114,5 +109,3 @@ const saveRecord = record => {
     };              
   };
 }
-
-module.exports = {saveRecord};

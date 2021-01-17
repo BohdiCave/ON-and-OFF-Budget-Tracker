@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <meta name="theme-color" content="#317EFB">
-  <link rel="shortcut icon" href="icons/icon-192x192.png" type="image/x-icon" />
+  <link rel="shortcut icon" href="./icons/icon-192x192.png" type="image/x-icon" />
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="manifest" href="./manifest.webmanifest" />
 
   <title>Budget Tracker</title>
 </head>
@@ -43,25 +43,23 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
-  <script src="index.js"></script>
+  <script src="./index.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("service-worker.js").then(reg => {
-            console.log("We found your service worker file!", reg);
-        }).catch(err => console.log(err));
+        navigator.serviceWorker.register("./service-worker.js")
+        .then(reg => console.log("Registration successful, scope:", reg.scope))
+        .catch(err => console.log("Registration failed:", err));
       });
     }
 
     (function syncTrans() {
       const db = indexedDB.open("offTransactions");
       db.onsuccess = e => {
-        if (e.target.result.transaction.objectStore("offTransactions")) {
+        if (e.target.result.transaction.objectStore) {
           return navigator.serviceWorker.ready.register("onlineSync")
           .then(() => console.log('Sync registered!'))
-          .catch(() => console.log('Sync registration failed :('));      
-        } else {
-          return;
+          .catch(err => console.log('Sync registration failed:', err));      
         }
       };
     })();
