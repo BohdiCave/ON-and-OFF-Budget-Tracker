@@ -130,13 +130,48 @@ function sendTransaction(isAdding) {
     }
   })
   .catch(err => {
-    // fetch failed, so save in indexed db
-    saveRecord(transaction);
-
+    console.log(err);
+    // fetch failed, post to IDB
+    backgroundSync(transaction);
     // clear form
     nameEl.value = "";
     amountEl.value = "";
+    
   });
+}
+
+function backgroundSync(record) {
+  idbUpdate(record)
+  .then(() => {
+      navigator.serviceWorker.ready
+      .then(
+        reg => {
+          reg.sync.register("onlineSync");
+          console.log('Sync registered!');
+        })
+      .catch(
+        err => console.log('Sync registration failed:', err)
+      );
+    })
+  .catch(err => console.log(err));
+} 
+ 
+async function idbUpdate(record) {
+  const dbReq = await indexedDB.open("offTransactions");
+  dbReq.onsuccess = e => {
+    const db = e.target.result;
+    const trans = db.transaction("offTransactions", "readwrite");
+    const offTrans = trans.objectStore("offTransactions");
+    if (!offTrans) {
+      const objStore = db.createObjectStore("offTransactions", {keyPath: "name"});
+      objStore.createIndex("name", "name", {unique: false});
+      objStore.createIndex("value", "value", {unique: false});
+      objStore.createIndex("date", "date", {unique: false});
+    }
+    db.put("offTransactions", record, "transaction")
+    .then(result => console.log("Offline transaction posted!", result))
+    .catch(err => console.log(err));
+  }
 }
 
 document.querySelector("#add-btn").onclick = function() {
