@@ -22,6 +22,7 @@ self.addEventListener("install", event => {
       cache.addAll(FILES_TO_CACHE);
     })
     .then(self.skipWaiting())
+    .catch(err => console.log(err))
   );
 });
   
@@ -53,11 +54,12 @@ self.addEventListener("fetch", event => {
     event.respondWith(
       fetch(req)
       .then(res => {
+        const resClone = res.clone();
         caches
         .open(cacheName)
         .then(
           cache => {
-            cache.put(req, res.clone());
+            cache.put(req, resClone);
           });
         return res;     
       }).catch(
@@ -68,31 +70,31 @@ self.addEventListener("fetch", event => {
           } else {
             console.log("POST to IDB")
             //save to IndexedDB
-            saveRecord(req.body);
+            saveRecords(req.body);
           }
           return err;
         }
       )
     )
+  } else {   
+    // use cache first for all other requests for performance
+    event.respondWith(
+      caches.match(req)
+      .then(
+        cachedResponse => {
+          if (cachedResponse) { return cachedResponse; }
+          // request is not in cache. make network request and cache the response
+          return caches
+          .open(cacheName)
+          .then(
+            cache => fetch(req)
+            .then(res => cache.put(req, res.clone()))
+            .then(() => res)
+          );
+        }
+      )
+    );
   }
-   
-  // use cache first for all other requests for performance
-  event.respondWith(
-    caches.match(req)
-    .then(
-      cachedResponse => {
-        if (cachedResponse) { return cachedResponse; }
-        // request is not in cache. make network request and cache the response
-        return caches
-        .open(CACHE_V1)
-        .then(
-          cache => fetch(req)
-          .then(res => cache.put(req, res.clone()))
-          .then(() => res)
-        );
-      }
-    )
-  );
 });
 
 self.addEventListener("sync", event => {
@@ -104,15 +106,18 @@ self.addEventListener("sync", event => {
   }
 });
 
-async function saveRecords() {  
+async function saveRecords(records) {  
   const dbReq = await indexedDB.open("offTransactions");
   dbReq.onsuccess = e => {
     const db = e.target.result;
     //Transaction 1 - Get records from IDB and update remote DB
-    const trans = db.transaction(["offTransactions"], "readonly").catch(err => console.log(err));
-    const offTrans = trans.objectStore("offTransactions").catch(err => console.log(err));
+    const trans = db.transaction(["offTransactions"], "readonly");
+      trans.onerror = err => console.log(err);
+      trans.oncomplete = upd => console.log("Database updated", upd);
+    const offTrans = trans.objectStore("offTransactions");
+      offTrans.onerror = err => console.log(err);
     const getReq = offTrans.getAll();
-    getReq.onsuccess = transactions => {
+      getReq.onsuccess = transactions => {
         return fetch("/api/transaction/bulk", {
           method: 'POST',
           body: JSON.stringify(transactions),
@@ -120,14 +125,15 @@ async function saveRecords() {
         }).then(() => console.log("Transactions posted."))
         .catch(err => console.log(err));
       };
-    getReq.onerror = err => console.log("Request failed.", err);
-    trans.oncomplete = upd => console.log("Database updated", upd);
+      getReq.onerror = err => console.log("Request failed.", err);
     //Transaction 2 - Clear IDB
-    const trans2 = db.transaction(["offTransactions"], "readwrite").catch(err => console.log(err));
-    const offTrans2 = trans2.objectStore("offTransactions").catch(err => console.log(err));
+    const trans2 = db.transaction(["offTransactions"], "readwrite");
+      trans2.onerror = err => console.log(err);
+      trans2.oncomplete = res => console.log("IDB cleared.", res);
+    const offTrans2 = trans2.objectStore("offTransactions");
+      offTrans2.onerror = err => console.log(err);
     const clrReq = offTrans2.clear();
-    clrReq.onsuccess = evt => console.log("Request successful.", evt);
-    clrReq.onerror = err => console.log("Request failed.", err);
-    trans2.oncomplete = res => console.log("IDB cleared.", res);
+      clrReq.onsuccess = evt => console.log("Request successful.", evt);
+      clrReq.onerror = err => console.log("Request failed.", err);    
   }
 }

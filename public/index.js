@@ -153,22 +153,21 @@ function backgroundSync(record) {
 
 async function idbUpdate(record) {
   const dbReq = await indexedDB.open("offTransactions");
+  let db, objStore;
+  dbReq.onupgradeneeded = event => {
+    db = event.target.result;
+    objStore = db.createObjectStore("offTransactions");
+  };
   dbReq.onsuccess = e => {
-    const db = e.target.result;
-    const trans = db.transaction(["offTransactions"], "readwrite").catch(err => console.log(err));
-    const offTrans = trans.objectStore("offTransactions").catch(err => {
-      if (!offTrans) {
-        const objStore = db.createObjectStore("offTransactions", {keyPath: "name"});
-        objStore.createIndex("name", "name", {unique: false});
-        objStore.createIndex("value", "value", {unique: false});
-        objStore.createIndex("date", "date", {unique: false});
-      }
-      console.log(err);
-    });
-    const putReq = offTrans.put(record, record.name)
-      .then(evt => console.log("Request successful.", evt))
-      .catch(err => console.log("Request failed", err));
-    trans.oncomplete = upd => console.log("IDB updated!", upd);
+    db = e.target.result;
+    const trans = db.transaction(["offTransactions"], "readwrite");
+      trans.onerror = err => console.log(err);
+      trans.oncomplete = upd => console.log("IDB updated!", upd);
+    const offTrans = trans.objectStore("offTransactions");
+      offTrans.onerror = err => console.log(err);
+    const putReq = offTrans.put(record, record.name);
+      putReq.onsuccess = evt => console.log("Request successful.", evt);
+      putReq.onerror = err => console.log("Request failed", err);  
   }
 }
 
