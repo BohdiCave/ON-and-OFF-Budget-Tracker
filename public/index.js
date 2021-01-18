@@ -151,12 +151,12 @@ function backgroundSync(record) {
   ); 
 } 
 
-async function idbUpdate(record) {
-  const dbReq = await indexedDB.open("offTransactions");
+function idbUpdate(record) {
+  const dbReq = indexedDB.open("offTransactions");
   let db, objStore;
   dbReq.onupgradeneeded = event => {
     db = event.target.result;
-    objStore = db.createObjectStore("offTransactions");
+    objStore = db.createObjectStore("offTransactions");  
   };
   dbReq.onsuccess = e => {
     db = e.target.result;

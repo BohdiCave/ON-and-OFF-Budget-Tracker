@@ -18,8 +18,8 @@ self.addEventListener("install", event => {
     caches
     .open(cacheName)
     .then(cache => {
-      console.log("SW caching.");
       cache.addAll(FILES_TO_CACHE);
+      console.log("SW caching.");
     })
     .then(self.skipWaiting())
     .catch(err => console.log(err))
@@ -44,7 +44,6 @@ self.addEventListener("activate", event => {
   self.clients.claim();
 });
 
-
 self.addEventListener("fetch", event => {
   console.log("SW fetching.");
   const req = event.request;  
@@ -62,19 +61,11 @@ self.addEventListener("fetch", event => {
             cache.put(req, resClone);
           });
         return res;     
-      }).catch(
-        err => {
-          if (req.method === "GET") {
-            console.log("GET from cache");
-            caches.match(req);
-          } else {
-            console.log("POST to IDB")
-            //save to IndexedDB
-            saveRecords(req.body);
-          }
-          return err;
-        }
-      )
+      })
+      .catch(err => { 
+          caches.match(req);
+          console.log(err);
+      })
     )
   } else {   
     // use cache first for all other requests for performance
@@ -89,7 +80,7 @@ self.addEventListener("fetch", event => {
           .then(
             cache => fetch(req)
             .then(res => cache.put(req, res.clone()))
-            .then(() => res)
+            .catch(err => console.log(err))
           );
         }
       )
@@ -97,43 +88,54 @@ self.addEventListener("fetch", event => {
   }
 });
 
+
 self.addEventListener("sync", event => {
   console.log("SW background syncing.");
   if (event.tag === "onlineSync") {
     event.waitUntil(
-      saveRecords()
+      syncRecords()
     );
   }
 });
 
-async function saveRecords(records) {  
-  const dbReq = await indexedDB.open("offTransactions");
+async function syncRecords() {  
+  const dbReq = indexedDB.open("offTransactions");
   dbReq.onsuccess = e => {
     const db = e.target.result;
-    //Transaction 1 - Get records from IDB and update remote DB
-    const trans = db.transaction(["offTransactions"], "readonly");
-      trans.onerror = err => console.log(err);
-      trans.oncomplete = upd => console.log("Database updated", upd);
-    const offTrans = trans.objectStore("offTransactions");
-      offTrans.onerror = err => console.log(err);
-    const getReq = offTrans.getAll();
-      getReq.onsuccess = transactions => {
-        return fetch("/api/transaction/bulk", {
-          method: 'POST',
-          body: JSON.stringify(transactions),
-          headers: { 'Content-Type': 'application/json' }
-        }).then(() => console.log("Transactions posted."))
-        .catch(err => console.log(err));
-      };
-      getReq.onerror = err => console.log("Request failed.", err);
-    //Transaction 2 - Clear IDB
-    const trans2 = db.transaction(["offTransactions"], "readwrite");
-      trans2.onerror = err => console.log(err);
-      trans2.oncomplete = res => console.log("IDB cleared.", res);
-    const offTrans2 = trans2.objectStore("offTransactions");
-      offTrans2.onerror = err => console.log(err);
-    const clrReq = offTrans2.clear();
-      clrReq.onsuccess = evt => console.log("Request successful.", evt);
-      clrReq.onerror = err => console.log("Request failed.", err);    
+    getTrans(db);
   }
+}
+
+function getTrans(db) {
+  //Transaction 1 - Get records from IDB and update remote DB
+  const getTrans = db.transaction(["offTransactions"], "readonly");
+    getTrans.onerror = err => console.log(err);
+    getTrans.oncomplete = upd => console.log("Database updated", upd);
+  const offTrans = getTrans.objectStore("offTransactions");
+    offTrans.onerror = err => console.log(err);
+  const getReq = offTrans.getAll();
+    getReq.onsuccess = e => {
+      const transactions = e.target.result;
+      return fetch("/api/transaction/bulk", {
+        method: 'POST',
+        body: JSON.stringify(transactions),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(() => console.log("Transactions posted.", transactions))
+      .then(clrTrans(db))
+      .catch(err => console.log(err));
+    };
+    getReq.onerror = err => console.log("Request failed.", err);
+}
+
+function clrTrans(db) {
+  //Transaction 2 - Clear IDB
+  const clrTrans = db.transaction(["offTransactions"], "readwrite");
+    clrTrans.onerror = err => console.log(err);
+    clrTrans.oncomplete = res => console.log("IDB cleared.", res);
+  const offTrans2 = clrTrans.objectStore("offTransactions");
+    offTrans2.onerror = err => console.log(err);
+  const clrReq = offTrans2.clear();
+    clrReq.onsuccess = evt => console.log("Request successful.", evt);
+    clrReq.onerror = err => console.log("Request failed.", err); 
 }
