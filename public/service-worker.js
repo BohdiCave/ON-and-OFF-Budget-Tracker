@@ -99,24 +99,35 @@ self.addEventListener("sync", event => {
   console.log("SW background syncing.");
   if (event.tag === "onlineSync") {
     event.waitUntil(
-      saveRecord()
+      saveRecords()
     );
   }
 });
 
-const saveRecord = record => {
-  //access IDB 
-  getTransactions()
-  .then(transactions => {  
-      return fetch("/api/transaction/bulk", {
-        method: 'POST',
-        body: JSON.stringify(transactions),
-        headers: { 'Content-Type': 'application/json' }
-      }).then(
-        () => console.log("Database updated!")
-      ).catch(
-        err => console.log(err)
-      );
-  });
-
+async function saveRecords() {  
+  const dbReq = await indexedDB.open("offTransactions");
+  dbReq.onsuccess = e => {
+    const db = e.target.result;
+    //Transaction 1 - Get records from IDB and update remote DB
+    const trans = db.transaction(["offTransactions"], "readonly").catch(err => console.log(err));
+    const offTrans = trans.objectStore("offTransactions").catch(err => console.log(err));
+    const getReq = offTrans.getAll();
+    getReq.onsuccess = transactions => {
+        return fetch("/api/transaction/bulk", {
+          method: 'POST',
+          body: JSON.stringify(transactions),
+          headers: { 'Content-Type': 'application/json' }
+        }).then(() => console.log("Transactions posted."))
+        .catch(err => console.log(err));
+      };
+    getReq.onerror = err => console.log("Request failed.", err);
+    trans.oncomplete = upd => console.log("Database updated", upd);
+    //Transaction 2 - Clear IDB
+    const trans2 = db.transaction(["offTransactions"], "readwrite").catch(err => console.log(err));
+    const offTrans2 = trans2.objectStore("offTransactions").catch(err => console.log(err));
+    const clrReq = offTrans2.clear();
+    clrReq.onsuccess = evt => console.log("Request successful.", evt);
+    clrReq.onerror = err => console.log("Request failed.", err);
+    trans2.oncomplete = res => console.log("IDB cleared.", res);
+  }
 }

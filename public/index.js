@@ -141,36 +141,34 @@ function sendTransaction(isAdding) {
 }
 
 function backgroundSync(record) {
-  idbUpdate(record)
-  .then(() => {
-      navigator.serviceWorker.ready
-      .then(
-        reg => {
-          reg.sync.register("onlineSync");
-          console.log('Sync registered!');
-        })
-      .catch(
-        err => console.log('Sync registration failed:', err)
-      );
-    })
-  .catch(err => console.log(err));
+  navigator.serviceWorker.ready
+  .then(reg => {
+    reg.sync.register("onlineSync");
+    console.log('Sync registered!');
+    idbUpdate(record);
+  }).catch(
+    err => console.log('Sync registration failed:', err)
+  ); 
 } 
- 
+
 async function idbUpdate(record) {
   const dbReq = await indexedDB.open("offTransactions");
   dbReq.onsuccess = e => {
     const db = e.target.result;
-    const trans = db.transaction("offTransactions", "readwrite");
-    const offTrans = trans.objectStore("offTransactions");
-    if (!offTrans) {
-      const objStore = db.createObjectStore("offTransactions", {keyPath: "name"});
-      objStore.createIndex("name", "name", {unique: false});
-      objStore.createIndex("value", "value", {unique: false});
-      objStore.createIndex("date", "date", {unique: false});
-    }
-    db.put("offTransactions", record, "transaction")
-    .then(result => console.log("Offline transaction posted!", result))
-    .catch(err => console.log(err));
+    const trans = db.transaction(["offTransactions"], "readwrite").catch(err => console.log(err));
+    const offTrans = trans.objectStore("offTransactions").catch(err => {
+      if (!offTrans) {
+        const objStore = db.createObjectStore("offTransactions", {keyPath: "name"});
+        objStore.createIndex("name", "name", {unique: false});
+        objStore.createIndex("value", "value", {unique: false});
+        objStore.createIndex("date", "date", {unique: false});
+      }
+      console.log(err);
+    });
+    const putReq = offTrans.put(record, record.name)
+      .then(evt => console.log("Request successful.", evt))
+      .catch(err => console.log("Request failed", err));
+    trans.oncomplete = upd => console.log("IDB updated!", upd);
   }
 }
 
